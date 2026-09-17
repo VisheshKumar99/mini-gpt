@@ -1,0 +1,5 @@
+The quick brown fox jumps over the lazy dog.
+The quick brown fox jumps over the lazy dog.
+Machine learning is a field of artificial intelligence.
+A transformer learns relationships between tokens.
+Attention allows a model to look at previous tokens.
