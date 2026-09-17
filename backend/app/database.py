@@ -33,6 +33,33 @@ def initialize_database() -> None:
             """
         )
 
+        connection.execute(
+            """
+            CREATE TABLE IF NOT EXISTS experiment_metrics (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                experiment_id INTEGER NOT NULL,
+                step INTEGER NOT NULL,
+                train_loss REAL,
+                val_loss REAL,
+                tokens_per_sec REAL,
+                tokens_seen INTEGER,
+                elapsed_s REAL,
+                created_at TEXT NOT NULL,
+
+                FOREIGN KEY (experiment_id)
+                    REFERENCES experiments(id)
+                    ON DELETE CASCADE
+            )
+            """
+        )
+
+        connection.execute(
+            """
+            CREATE INDEX IF NOT EXISTS idx_experiment_metrics_experiment
+            ON experiment_metrics(experiment_id, step)
+            """
+        )
+
 
 def row_to_dict(row: sqlite3.Row) -> dict[str, Any]:
     return {
@@ -91,3 +118,58 @@ def update_experiment(experiment_id: int, **changes: Any) -> dict[str, Any] | No
             (*serialized.values(), experiment_id),
         )
     return get_experiment(experiment_id)
+
+def add_experiment_metric(
+    experiment_id: int,
+    metric: dict[str, Any],
+) -> None:
+
+    created_at = datetime.now(timezone.utc).isoformat()
+
+    with get_connection() as connection:
+        connection.execute(
+            """
+            INSERT INTO experiment_metrics (
+                experiment_id,
+                step,
+                train_loss,
+                val_loss,
+                tokens_per_sec,
+                tokens_seen,
+                elapsed_s,
+                created_at
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                experiment_id,
+                metric["step"],
+                metric.get("train_loss"),
+                metric.get("val_loss"),
+                metric.get("tokens_per_sec"),
+                metric.get("tokens_seen"),
+                metric.get("elapsed_s"),
+                created_at,
+            ),
+        )
+def get_experiment_metrics(
+    experiment_id: int,
+) -> list[dict[str, Any]]:
+    with get_connection() as connection:
+        rows = connection.execute(
+            """
+            SELECT
+                step,
+                train_loss,
+                val_loss,
+                tokens_per_sec,
+                tokens_seen,
+                elapsed_s
+            FROM experiment_metrics
+            WHERE experiment_id = ?
+            ORDER BY step ASC
+            """,
+            (experiment_id,),
+        ).fetchall()
+
+    return [dict(row) for row in rows]
