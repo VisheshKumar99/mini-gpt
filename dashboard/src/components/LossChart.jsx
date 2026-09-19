@@ -15,7 +15,7 @@ const shortNum = (v) => {
   return `${v}`
 }
 
-function ChartTooltip({ active, payload, xKey }) {
+function ChartTooltip({ active, payload, xKey, decimals }) {
   if (!active || !payload?.length) return null
   const x = payload[0].payload?.[xKey]
   return (
@@ -24,7 +24,7 @@ function ChartTooltip({ active, payload, xKey }) {
       {payload.map((p) => (
         <div className="t-row" key={p.name} style={{ color: p.stroke }}>
           <span>{p.name}</span>
-          <span>{Number(p.value).toFixed(3)}</span>
+          <span>{decimals === 0 ? Math.round(p.value).toLocaleString() : Number(p.value).toFixed(3)}</span>
         </div>
       ))}
     </div>
@@ -32,21 +32,26 @@ function ChartTooltip({ active, payload, xKey }) {
 }
 
 /**
- * series: [{ id, label, color, points: [{ step, tokens_seen, train_loss, val_loss }] }]
+ * series: [{ id, label, color, points: [{ step, tokens_seen, train_loss, val_loss, tokens_per_sec }] }]
+ * mode:   'loss' (train + val) or 'throughput' (tokens_per_sec)
+ *
+ * Points come straight from the backend: GET /api/experiments/{id}/metrics for
+ * history, then the WebSocket stream appends to the same array.
  */
-export default function LossChart({ series = [] }) {
+export default function LossChart({ series = [], mode = 'loss', title }) {
   const [xAxis, setXAxis] = useState('step')
   const [showTrain, setShowTrain] = useState(true)
   const [showVal, setShowVal] = useState(true)
   const [logY, setLogY] = useState(false)
 
+  const isLoss = mode === 'loss'
   const xKey = AXES.find((a) => a.id === xAxis).key
   const hasData = series.some((s) => s.points?.length)
 
   return (
     <div className="panel">
       <div className="panel-head">
-        <h2>Loss</h2>
+        <h2>{title ?? (isLoss ? 'Loss' : 'Throughput')}</h2>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {AXES.map((a) => (
             <button
@@ -58,16 +63,22 @@ export default function LossChart({ series = [] }) {
               {a.label}
             </button>
           ))}
-          <button className="ghost-btn" aria-pressed={showTrain} onClick={() => setShowTrain((v) => !v)}>Train</button>
-          <button className="ghost-btn" aria-pressed={showVal} onClick={() => setShowVal((v) => !v)}>Validation</button>
-          <button className="ghost-btn" aria-pressed={logY} onClick={() => setLogY((v) => !v)}>Log y</button>
+          {isLoss && (
+            <>
+              <button className="ghost-btn" aria-pressed={showTrain} onClick={() => setShowTrain((v) => !v)}>Train</button>
+              <button className="ghost-btn" aria-pressed={showVal} onClick={() => setShowVal((v) => !v)}>Validation</button>
+              <button className="ghost-btn" aria-pressed={logY} onClick={() => setLogY((v) => !v)}>Log y</button>
+            </>
+          )}
         </div>
       </div>
 
       {!hasData ? (
         <div className="empty">
           <strong>Nothing plotted yet</strong>
-          Loss appears here as soon as the first evaluation lands.
+          {isLoss
+            ? 'Loss appears here as soon as the first metric arrives over the socket.'
+            : 'Tokens per second appears here once training starts.'}
         </div>
       ) : (
         <>
@@ -91,16 +102,30 @@ export default function LossChart({ series = [] }) {
                   }}
                 />
                 <YAxis
-                  scale={logY ? 'log' : 'linear'}
-                  domain={logY ? ['auto', 'auto'] : ['dataMin - 0.15', 'dataMax + 0.15']}
-                  tickFormatter={(v) => v.toFixed(2)}
+                  scale={isLoss && logY ? 'log' : 'linear'}
+                  domain={isLoss && logY ? ['auto', 'auto'] : ['dataMin - 0.15', 'dataMax + 0.15']}
+                  tickFormatter={(v) => (isLoss ? v.toFixed(2) : shortNum(v))}
                   stroke="var(--muted)"
                   tick={{ fontSize: 11, fontFamily: 'var(--mono)' }}
                   width={52}
                 />
-                <Tooltip content={<ChartTooltip xKey={xKey} />} />
+                <Tooltip content={<ChartTooltip xKey={xKey} decimals={isLoss ? 3 : 0} />} />
 
                 {series.flatMap((s) => {
+                  if (!isLoss) {
+                    return [
+                      <Line
+                        key={`${s.id}-tps`}
+                        data={s.points}
+                        dataKey="tokens_per_sec"
+                        name={`${s.label} · tok/s`}
+                        stroke={s.color}
+                        strokeWidth={1.75}
+                        dot={false}
+                        isAnimationActive={false}
+                      />,
+                    ]
+                  }
                   const lines = []
                   if (showTrain) {
                     lines.push(
@@ -144,7 +169,7 @@ export default function LossChart({ series = [] }) {
                 {s.label}
               </span>
             ))}
-            <span style={{ marginLeft: 'auto' }}>solid = train, dashed = validation</span>
+            {isLoss && <span style={{ marginLeft: 'auto' }}>solid = train, dashed = validation</span>}
           </div>
         </>
       )}

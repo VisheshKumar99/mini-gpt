@@ -2,10 +2,12 @@ import time
 import torch
 import torch.nn as nn
 
+from src import tokenizer
 from src.tokenizer import CharacterTokenizer
 from src.dataset import TextDataset
 from src.gpt import GPT
 from backend.app import database
+from backend.app.services.websocket_manager import manager
 
 
 class ExperimentRunner:
@@ -68,10 +70,18 @@ class ExperimentRunner:
         # Dataset
         # ------------------------------------------------
 
-        dataset = TextDataset(
+        train_dataset = TextDataset(
             text=text,
             tokenizer=tokenizer,
-            context_length=self.config["block_size"]
+            context_length=self.config["block_size"],
+            split="train",
+        )
+
+        val_dataset = TextDataset(
+            text=text,
+            tokenizer=tokenizer,
+            context_length=self.config["block_size"],
+            split="val",
         )
 
         # ------------------------------------------------
@@ -110,7 +120,7 @@ class ExperimentRunner:
 
         for step in range(1, self.config["max_steps"] + 1):
 
-            x, y = dataset.get_batch(
+            x, y = train_dataset.get_batch(
                 self.config["batch_size"]
             )
 
@@ -130,6 +140,21 @@ class ExperimentRunner:
 
             optimizer.step()
 
+            model.eval()
+
+            with torch.no_grad():
+                val_x, val_y = val_dataset.get_batch(
+                    self.config["batch_size"]
+                )
+                val_x = val_x.to(self.device)
+                val_y = val_y.to(self.device)
+                val_logits, _ = model(val_x)
+                val_loss = loss_fn(
+                    val_logits.reshape(-1, vocab_size),
+                    val_y.reshape(-1),
+                )
+            model.train()
+
             elapsed = time.time() - start_time
 
             tokens_seen = (
@@ -147,7 +172,7 @@ class ExperimentRunner:
             metric = {
                 "step": step,
                 "train_loss": loss.item(),
-                "val_loss": None,
+                "val_loss": val_loss.item(),
                 "tokens_per_sec": tokens_per_sec,
                 "tokens_seen": tokens_seen,
                 "elapsed_s": elapsed,
@@ -156,8 +181,13 @@ class ExperimentRunner:
             
 
             self.metrics.append(metric)
-            
+
             database.add_experiment_metric(
+                self.config["experiment_id"],
+                metric
+            )
+
+            manager.publish(
                 self.config["experiment_id"],
                 metric
             )

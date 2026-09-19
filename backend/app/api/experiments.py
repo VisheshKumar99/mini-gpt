@@ -1,9 +1,11 @@
-from fastapi import APIRouter, HTTPException, status, BackgroundTasks
+from fastapi import APIRouter, HTTPException, status, BackgroundTasks, WebSocket, WebSocketDisconnect
 
 from backend.app import database
 from backend.app.models.experiment import Experiment, ExperimentCreate, ExperimentUpdate
 from backend.app.services.benchmark import run_benchmark
 from backend.app.services.trainer import run_training
+
+from backend.app.services.websocket_manager import manager
 
 
 router = APIRouter(prefix="/api/experiments", tags=["experiments"])
@@ -128,3 +130,44 @@ def get_experiment_metrics(experiment_id: int) -> list[dict]:
         )
 
     return database.get_experiment_metrics(experiment_id)
+
+@router.get("/{experiment_id}", response_model=Experiment)
+def get_experiment(experiment_id: int) -> Experiment:
+    experiment = database.get_experiment(experiment_id)
+
+    if experiment is None:
+        raise HTTPException(
+            status_code=404,
+            detail="Experiment not found",
+        )
+
+    return Experiment.model_validate(experiment)
+
+
+@router.websocket("/{experiment_id}/ws")
+async def experiment_websocket(
+    websocket: WebSocket,
+    experiment_id: int,
+):
+    experiment = database.get_experiment(
+        experiment_id
+    )
+
+    if experiment is None:
+        await websocket.close(code=1008)
+        return
+
+    await manager.connect(
+        experiment_id,
+        websocket,
+    )
+
+    try:
+        while True:
+            await websocket.receive_text()
+
+    except WebSocketDisconnect:
+        manager.disconnect(
+            experiment_id,
+            websocket,
+        )
