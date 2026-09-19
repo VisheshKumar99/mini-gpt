@@ -1,4 +1,6 @@
 import time
+from pathlib import Path
+
 import torch
 import torch.nn as nn
 
@@ -8,6 +10,15 @@ from src.dataset import TextDataset
 from src.gpt import GPT
 from backend.app import database
 from backend.app.services.websocket_manager import manager
+
+
+# Directory where per-experiment model checkpoints are saved.
+MODELS_DIR = Path(__file__).resolve().parents[3] / "models"
+
+
+def checkpoint_path(experiment_id: int) -> Path:
+    """Path to the saved checkpoint for a given experiment."""
+    return MODELS_DIR / f"experiment_{experiment_id}.pt"
 
 
 class ExperimentRunner:
@@ -202,6 +213,28 @@ class ExperimentRunner:
                 )
 
         total_time = time.time() - start_time
+
+        # ------------------------------------------------
+        # Save checkpoint so the model can be used later
+        # for inference (see the chat / generate endpoint).
+        # We store the tokenizer vocabulary (chars) too, since
+        # the character tokenizer is derived from the dataset.
+        # ------------------------------------------------
+
+        experiment_id = self.config.get("experiment_id")
+        if experiment_id is not None:
+            MODELS_DIR.mkdir(parents=True, exist_ok=True)
+            checkpoint = {
+                "model_state_dict": model.state_dict(),
+                "vocab_size": vocab_size,
+                "embedding_dim": self.config["n_embd"],
+                "num_heads": self.config["n_head"],
+                "num_layers": self.config["n_layer"],
+                "context_length": self.config["block_size"],
+                "chars": tokenizer.chars,
+            }
+            torch.save(checkpoint, checkpoint_path(experiment_id))
+            print("Saved checkpoint:", checkpoint_path(experiment_id))
 
         print()
         print("================================")

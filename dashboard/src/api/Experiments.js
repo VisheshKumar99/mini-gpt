@@ -26,7 +26,7 @@ export const DATASETS = [
   { id: '1mb', file: 'data/1mb.txt', label: '1 MB', bytes: 1048576, tokens: 262000, note: 'Smoke test. Overfits in minutes.' },
   { id: '10mb', file: 'data/10mb.txt', label: '10 MB', bytes: 10485760, tokens: 2600000, note: 'Enough signal for small models.' },
   { id: '100mb', file: 'data/100mb.txt', label: '100 MB', bytes: 104857600, tokens: 26000000, note: 'Where scaling starts to show.' },
-  { id: '1gb', file: 'data/1gb.txt', label: '1 GB', bytes: 1073741824, tokens: 268000000, note: 'Streams from disk. Long runs.' },
+  // { id: '1gb', file: 'data/1gb.txt', label: '1 GB', bytes: 1073741824, tokens: 268000000, note: 'Streams from disk. Long runs.' },
 ]
 
 export const MODELS = [
@@ -34,8 +34,10 @@ export const MODELS = [
   { id: '100k', label: '100K', params: 100000, n_layer: 2, n_head: 2, n_embd: 64, block_size: 128 },
   { id: '1m', label: '1M', params: 1000000, n_layer: 4, n_head: 4, n_embd: 128, block_size: 256 },
   { id: '10m', label: '10M', params: 10000000, n_layer: 6, n_head: 6, n_embd: 384, block_size: 256 },
-  { id: '100m', label: '100M', params: 100000000, n_layer: 12, n_head: 12, n_embd: 768, block_size: 512 },
-  { id: '1b', label: '1B', params: 1000000000, n_layer: 24, n_head: 16, n_embd: 2048, block_size: 1024 },
+  { id: '30m', label: '30M', params: 100000000, n_layer: 12, n_head: 12, n_embd: 768, block_size: 512 },
+  { id: '50m', label: '50M', params: 100000000, n_layer: 12, n_head: 12, n_embd: 768, block_size: 512 },
+  // { id: '100m', label: '100M', params: 100000000, n_layer: 12, n_head: 12, n_embd: 768, block_size: 512 },
+  // { id: '1b', label: '1B', params: 1000000000, n_layer: 24, n_head: 16, n_embd: 2048, block_size: 1024 },
 ]
 
 // Configs above this are listed but will very likely be rejected by an 8 GB M1.
@@ -91,6 +93,16 @@ export const createExperiment = (payload) =>
 
 export const startExperiment = (id) =>
   request(`/api/experiments/${id}/train`, { method: 'POST' })
+
+/**
+ * Generate a text continuation from a trained experiment's model.
+ * Returns { experiment_id, prompt, completion }.
+ */
+export const generate = (id, { prompt, max_new_tokens, temperature, top_k } = {}) =>
+  request(`/api/experiments/${id}/generate`, {
+    method: 'POST',
+    body: JSON.stringify({ prompt, max_new_tokens, temperature, top_k }),
+  })
 
 /** Build the POST body from selected config. Kept here so the shape lives in one place. */
 export function buildExperimentPayload({ dataset, model, batch_size, learning_rate, max_steps, device }) {
